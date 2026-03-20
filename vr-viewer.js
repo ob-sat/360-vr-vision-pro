@@ -5,9 +5,10 @@
  * Loads Marzipano cube-map tiles from https://saishashang.github.io/tiles/
  * and renders them as a 360° skybox inside a WebXR immersive-vr session.
  *
- * Tile URL pattern:  tiles/{sceneId}/{faceSize}/{face}/{row}/{col}.jpg
+ * Tile URL pattern:  tiles/{sceneId}/{level}/{face}/{row}/{col}.jpg
  * Face names (Marzipano standard): f, b, l, r, u, d
- * At faceSize=512 each face is a single 512×512 tile (row=0, col=0).
+ * Levels: 1 (lowest, single tile per face), 2, 3 (highest, multi-tile)
+ * At level 1 each face is a single tile at row=0, col=0.
  */
 
 import * as THREE from 'three';
@@ -17,11 +18,12 @@ import * as THREE from 'three';
 const TILE_BASE = 'https://saishashang.github.io/tiles/';
 
 /**
- * Face size to load. At 512px each face is a single tile (no stitching needed).
- * Increase to 1024 for higher quality — but you must stitch 2×2 tiles per face.
- * Keep at 512 for best compatibility and load speed in Vision Pro.
+ * Zoom level to load.
+ *   1 = lowest quality, single tile per face (fast, best for initial load)
+ *   2 = medium quality, 2×2 tiles per face
+ *   3 = highest quality, 4×4 tiles per face (requires tile stitching)
  */
-const FACE_SIZE = 512;
+const FACE_LEVEL = 1;
 
 /**
  * Three.js CubeTextureLoader expects faces in order: [+X, -X, +Y, -Y, +Z, -Z]
@@ -82,7 +84,7 @@ let onSceneChangeCallback = null;
  * Row and col are always 0 when faceSize === tileSize (single tile per face).
  */
 function tileUrl(sceneId, face) {
-  return `${TILE_BASE}${sceneId}/${FACE_SIZE}/${face}/0/0.jpg`;
+  return `${TILE_BASE}${sceneId}/${FACE_LEVEL}/${face}/0/0.jpg`;
 }
 
 /**
