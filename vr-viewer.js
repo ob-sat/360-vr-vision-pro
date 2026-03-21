@@ -2,122 +2,91 @@
  * vr-viewer.js
  * Three.js + WebXR immersive panorama engine for Apple Vision Pro.
  *
- * Loads Marzipano cube-map tiles from https://saishashang.github.io/tiles/
- * and renders them as a 360° skybox inside a WebXR immersive-vr session.
+ * Look around  → move your head (XR pose tracking, automatic)
+ * Switch scene → pinch thumb + index finger (XR select event, cycles scenes)
+ * Exit VR      → press the Digital Crown on Vision Pro
  *
- * Tile URL pattern:  tiles/{sceneId}/{level}/{face}/{row}/{col}.jpg
- * Face names (Marzipano standard): f, b, l, r, u, d
- * Levels: 1 (lowest, single tile per face), 2, 3 (highest, multi-tile)
- * At level 1 each face is a single tile at row=0, col=0.
+ * Tile URL: https://saishashang.github.io/tiles/{sceneId}/{level}/{face}/{row}/{col}.jpg
  */
 
 import * as THREE from 'three';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const TILE_BASE = 'https://saishashang.github.io/tiles/';
-
-/**
- * Zoom level to load.
- *   1 = lowest quality, single tile per face (fast, best for initial load)
- *   2 = medium quality, 2×2 tiles per face
- *   3 = highest quality, 4×4 tiles per face (requires tile stitching)
- */
+const TILE_BASE  = 'https://saishashang.github.io/tiles/';
 const FACE_LEVEL = 1;
 
-/**
- * Three.js CubeTextureLoader expects faces in order: [+X, -X, +Y, -Y, +Z, -Z]
- * Mapping to Marzipano face names:
- *   +X = right  → 'r'
- *   -X = left   → 'l'
- *   +Y = up     → 'u'
- *   -Y = down   → 'd'
- *   +Z = back   → 'b'  (Three.js camera looks toward -Z, so "back" is +Z)
- *   -Z = front  → 'f'
- *
- * If the panorama appears 180° rotated, swap 'f'↔'b' in this array.
- * If left/right are mirrored, swap 'r'↔'l'.
- */
+// Three.js CubeTextureLoader order: [+X, -X, +Y, -Y, +Z, -Z]
+// Marzipano: r=right(+X) l=left(-X) u=up(+Y) d=down(-Y) b=back(+Z) f=front(-Z)
 const FACE_MAP = ['r', 'l', 'u', 'd', 'b', 'f'];
 
-// ─── Scene definitions ────────────────────────────────────────────────────────
+// ─── Scenes ───────────────────────────────────────────────────────────────────
 
 export const SCENES = [
-  { id: '0-reception01',  label: 'Reception 01' },
-  { id: '1-reception02',  label: 'Reception 02' },
+  { id: '0-reception01', label: 'Reception 01' },
+  { id: '1-reception02', label: 'Reception 02' },
 ];
 
-// ─── Internal state ───────────────────────────────────────────────────────────
+// ─── State ────────────────────────────────────────────────────────────────────
 
-/** @type {THREE.WebGLRenderer} */
-let renderer;
-
-/** @type {THREE.Scene} */
-let threeScene;
-
-/** @type {THREE.PerspectiveCamera} */
-let camera;
-
-/** @type {XRSession|null} */
+let renderer, threeScene, camera;
 let xrSession = null;
 
-/** @type {Function|null} */
-let onSceneChangeCallback = null;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Build a tile URL for a specific face of a scene at the configured face size.
- * Row and col are always 0 when faceSize === tileSize (single tile per face).
- */
 function tileUrl(sceneId, face) {
   return `${TILE_BASE}${sceneId}/${FACE_LEVEL}/${face}/0/0.jpg`;
 }
 
-/**
- * Load a cube texture for the given scene ID.
- * Returns a promise that resolves with a THREE.CubeTexture.
- */
-function loadCubeTexture(sceneId) {
-  return new Promise((resolve, reject) => {
-    const loader = new THREE.CubeTextureLoader();
-    loader.setCrossOrigin('anonymous');
-    loader.load(
-      FACE_MAP.map(f => tileUrl(sceneId, f)),
-      resolve,
-      undefined,
-      (err) => reject(new Error(`Failed to load tiles for "${sceneId}": ${err.message ?? err}`))
-    );
-  });
-}
-
-/**
- * Show or hide the loading overlay managed by the calling page.
- */
 function setLoading(visible) {
   const el = document.getElementById('vr-loading');
   if (el) el.style.display = visible ? 'flex' : 'none';
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
 /**
- * Check whether immersive-vr WebXR is supported in this browser.
- * @returns {Promise<boolean>}
+ * Load cube-map tiles for a scene.
+ * minFilter + generateMipmaps = false reduces visible seams at face edges.
  */
-export async function checkVRSupport() {
-  if (!navigator.xr) return false;
+function loadCubeTexture(sceneId) {
+  return new Promise((resolve, reject) => {
+    new THREE.CubeTextureLoader()
+      .setCrossOrigin('anonymous')
+      .load(
+        FACE_MAP.map(f => tileUrl(sceneId, f)),
+        (tex) => {
+          tex.minFilter = THREE.LinearFilter;
+          tex.generateMipmaps = false;
+          resolve(tex);
+        },
+        undefined,
+        (err) => reject(new Error(`Tile load failed for "${sceneId}": ${err.message ?? err}`))
+      );
+  });
+}
+
+async function switchScene(sceneId) {
+  setLoading(true);
   try {
-    return await navigator.xr.isSessionSupported('immersive-vr');
-  } catch {
-    return false;
+    const tex = await loadCubeTexture(sceneId);
+    if (threeScene.background instanceof THREE.CubeTexture) {
+      threeScene.background.dispose();
+    }
+    threeScene.background = tex;
+  } catch (err) {
+    console.error('[VRViewer] switchScene failed:', err);
+  } finally {
+    setLoading(false);
   }
 }
 
-/**
- * Initialise the Three.js renderer and attach its canvas to #canvas-container.
- * Call this once after DOMContentLoaded.
- */
+// ─── Public API ──────────────────────────────────────────────────────────────
+
+export async function checkVRSupport() {
+  if (!navigator.xr) return false;
+  try { return await navigator.xr.isSessionSupported('immersive-vr'); }
+  catch { return false; }
+}
+
 export function init() {
   const container = document.getElementById('canvas-container');
 
@@ -129,67 +98,41 @@ export function init() {
   container.appendChild(renderer.domElement);
 
   threeScene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
 
-  camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.01,
-    1000
-  );
-
-  // Resize handler (non-XR viewport)
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // Render loop — Three.js WebXR requires render() to be called every frame
-  // even inside an XR session; the XR system updates the camera pose automatically.
-  renderer.setAnimationLoop(() => {
-    renderer.render(threeScene, camera);
-  });
+  // Three.js WebXR: always call render() — XR system updates camera pose automatically
+  renderer.setAnimationLoop(() => renderer.render(threeScene, camera));
 }
 
-/**
- * Enter an immersive-vr WebXR session.
- *
- * @param {string}   initialSceneId   - Scene to load first (from SCENES[].id)
- * @param {Function} onSceneChange    - Called with the new sceneId when scene switches
- */
 export async function enterVR(initialSceneId, onSceneChange) {
-  onSceneChangeCallback = onSceneChange ?? null;
-
   try {
-    // 1. Request XR session FIRST — must happen before any other await
-    //    so the browser's transient user activation (gesture window) is still valid.
-    const scenePanel = document.getElementById('scene-panel');
-    const sessionInit = {
+    // requestSession MUST be called before any other await (user gesture window)
+    xrSession = await navigator.xr.requestSession('immersive-vr', {
       requiredFeatures: ['local'],
-      optionalFeatures: ['dom-overlay'],
-      domOverlay: scenePanel ? { root: scenePanel } : undefined,
-    };
-    xrSession = await navigator.xr.requestSession('immersive-vr', sessionInit);
+    });
     renderer.xr.setReferenceSpaceType('local');
     await renderer.xr.setSession(xrSession);
 
-    // 2. Session is live — now safe to load textures asynchronously
+    // Session live — load panorama
     setLoading(true);
-    const texture = await loadCubeTexture(initialSceneId);
-    threeScene.background = texture;
-
+    const tex = await loadCubeTexture(initialSceneId);
+    threeScene.background = tex;
     setLoading(false);
 
-    // 3. Pinch gesture (XR select event) cycles through scenes.
-    //    On Vision Pro: gaze anywhere, then pinch thumb + index finger.
+    // Pinch (select event) → cycle to next scene
     let sceneIndex = SCENES.findIndex(s => s.id === initialSceneId);
     xrSession.addEventListener('select', async () => {
       sceneIndex = (sceneIndex + 1) % SCENES.length;
       await switchScene(SCENES[sceneIndex].id);
-      onSceneChangeCallback?.(SCENES[sceneIndex].id);
+      onSceneChange?.(SCENES[sceneIndex].id);
     });
 
-    // 4. Session-end cleanup
     xrSession.addEventListener('end', () => {
       xrSession = null;
       setLoading(false);
@@ -202,33 +145,6 @@ export async function enterVR(initialSceneId, onSceneChange) {
   }
 }
 
-/**
- * Switch to a different panorama scene while inside a VR session (or in preview).
- * @param {string} sceneId
- */
-export async function switchScene(sceneId) {
-  setLoading(true);
-  try {
-    const texture = await loadCubeTexture(sceneId);
-
-    // Dispose previous texture to free GPU memory
-    if (threeScene.background instanceof THREE.CubeTexture) {
-      threeScene.background.dispose();
-    }
-    threeScene.background = texture;
-
-    onSceneChangeCallback?.(sceneId);
-  } catch (err) {
-    console.error('[VRViewer] switchScene failed:', err);
-    alert(`Could not load scene "${sceneId}". Check console for details.`);
-  } finally {
-    setLoading(false);
-  }
-}
-
-/**
- * End the active XR session and return to the flat browser view.
- */
 export function exitVR() {
   xrSession?.end();
 }

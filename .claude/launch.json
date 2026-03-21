@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "360-vr-static",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "5173", "."],
+      "port": 5173
+    }
+  ]
+}

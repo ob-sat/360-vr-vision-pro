@@ -7,12 +7,6 @@
   <meta name="theme-color" content="#0a0a0f">
   <title>360° Immersive Tour — Vision Pro</title>
   <link rel="stylesheet" href="style.css">
-
-  <!--
-    Import map: resolves "three" to the CDN-hosted ES module build.
-    Three.js r160 ships with a WebXR-ready renderer.
-    visionOS 2 Safari supports importmap natively.
-  -->
   <script type="importmap">
   {
     "imports": {
@@ -23,175 +17,91 @@
 </head>
 <body>
 
-  <!-- ── Three.js canvas sits behind everything ── -->
   <div id="canvas-container"></div>
 
-  <!-- ── Loading overlay ──────────────────────── -->
   <div id="vr-loading" style="display:none">
     <div class="spinner"></div>
     <p>Loading panorama…</p>
   </div>
 
-  <!-- ── Main launcher UI ─────────────────────── -->
   <div id="main-ui">
-
     <header>
       <h1>360° Immersive Tour</h1>
       <p class="subtitle">Explore office spaces in Apple Vision Pro</p>
     </header>
 
-    <!-- WebXR status indicator -->
     <div id="vr-status" class="status-checking">
       <span class="status-dot"></span>
       <span class="status-text">Checking WebXR support…</span>
     </div>
 
-    <!-- Scene picker -->
     <section>
       <h2>Choose a Space</h2>
-      <div id="scene-grid">
-        <!-- Populated by the module script below -->
-      </div>
+      <div id="scene-grid"></div>
     </section>
 
-    <!-- Enter VR button -->
     <div id="enter-vr-section">
       <button id="enter-vr-btn" disabled>Enter VR</button>
       <p class="vr-hint" id="vr-hint">
-        Open this page in <strong>Safari on Apple Vision Pro</strong> to enter immersive mode.
+        Open in <strong>Safari on Apple Vision Pro</strong> to enter immersive mode.
       </p>
     </div>
 
-    <a class="orig-link"
-       href="https://saishashang.github.io/"
-       target="_blank"
-       rel="noopener noreferrer">
+    <a class="orig-link" href="https://saishashang.github.io/" target="_blank" rel="noopener noreferrer">
       View in standard 360° viewer →
     </a>
+  </div>
 
-  </div><!-- /#main-ui -->
-
-  <!--
-    DOM Overlay panel — rendered as a floating 2D panel inside the XR session.
-    visionOS positions this as a window in the user's immersive space.
-    Hidden until enterVR() activates it.
-  -->
-  <div id="scene-panel" style="display:none" role="dialog" aria-label="Switch panorama scene">
-
-    <div class="panel-header">
-      <h2>Switch Space</h2>
-      <button id="exit-vr-btn" aria-label="Exit VR">✕ Exit VR</button>
-    </div>
-
-    <div id="panel-scene-grid">
-      <!-- Populated by the module script below -->
-    </div>
-
-  </div><!-- /#scene-panel -->
-
-  <!--
-    Main application script — ES module so it can import Three.js and vr-viewer.js.
-    Top-level await is supported in visionOS 2 Safari and modern browsers.
-  -->
   <script type="module">
-    import { SCENES, checkVRSupport, init, enterVR, switchScene, exitVR }
-      from './vr-viewer.js';
+    import { SCENES, checkVRSupport, init, enterVR } from './vr-viewer.js';
 
-    // ── Track which scene is selected in the launcher ──
     let selectedSceneId = SCENES[0].id;
 
-    // ─────────────────────────────────────────────────
-    // Build a scene button grid inside a container
-    // ─────────────────────────────────────────────────
-    function buildSceneGrid(containerId, onSelect) {
-      const grid = document.getElementById(containerId);
-      for (const scene of SCENES) {
-        const btn = document.createElement('button');
-        btn.className = 'scene-btn';
-        btn.dataset.id = scene.id;
-        btn.textContent = scene.label;
-        btn.addEventListener('click', () => onSelect(scene.id));
-        grid.appendChild(btn);
-      }
-    }
-
-    function setActiveScene(containerId, sceneId) {
-      document.querySelectorAll(`#${containerId} .scene-btn`).forEach(b => {
-        b.classList.toggle('active', b.dataset.id === sceneId);
+    // Build scene grid
+    const grid = document.getElementById('scene-grid');
+    for (const scene of SCENES) {
+      const btn = document.createElement('button');
+      btn.className = 'scene-btn';
+      btn.dataset.id = scene.id;
+      btn.textContent = scene.label;
+      btn.addEventListener('click', () => {
+        selectedSceneId = scene.id;
+        document.querySelectorAll('.scene-btn').forEach(b =>
+          b.classList.toggle('active', b.dataset.id === scene.id));
       });
+      grid.appendChild(btn);
     }
+    document.querySelector('.scene-btn').classList.add('active');
 
-    // Build both grids (launcher + in-VR panel)
-    buildSceneGrid('scene-grid', (id) => {
-      selectedSceneId = id;
-      setActiveScene('scene-grid', id);
-    });
-
-    buildSceneGrid('panel-scene-grid', async (id) => {
-      setActiveScene('panel-scene-grid', id);
-      await switchScene(id);
-    });
-
-    // Mark first scene as selected
-    setActiveScene('scene-grid', selectedSceneId);
-    setActiveScene('panel-scene-grid', selectedSceneId);
-
-    // ─────────────────────────────────────────────────
-    // WebXR capability check
-    // ─────────────────────────────────────────────────
+    // WebXR check
     const statusEl   = document.getElementById('vr-status');
     const statusText = statusEl.querySelector('.status-text');
     const enterBtn   = document.getElementById('enter-vr-btn');
     const hintEl     = document.getElementById('vr-hint');
 
-    const vrSupported = await checkVRSupport();
-
-    if (vrSupported) {
-      statusEl.className = 'status-ready';
+    const supported = await checkVRSupport();
+    if (supported) {
+      statusEl.className  = 'status-ready';
       statusText.textContent = 'WebXR ready — immersive VR supported';
-      enterBtn.disabled = false;
-      hintEl.textContent = 'Select a space above, then press Enter VR.';
+      enterBtn.disabled   = false;
+      hintEl.textContent  = 'Select a space, then press Enter VR. Move your head to look around. Pinch to switch scenes.';
     } else {
-      statusEl.className = 'status-unavailable';
+      statusEl.className  = 'status-unavailable';
       statusText.textContent = 'WebXR immersive-vr not available';
-      hintEl.innerHTML =
-        'Open this page in <strong>Safari on Apple Vision Pro</strong> (visionOS 2+) ' +
-        'or a WebXR-compatible browser such as Chrome with a VR headset connected.';
+      hintEl.innerHTML    = 'Open in <strong>Safari on Apple Vision Pro</strong> (visionOS 2+). Enable WebXR Device API in Safari Feature Flags.';
     }
 
-    // ─────────────────────────────────────────────────
-    // Initialise Three.js renderer
-    // ─────────────────────────────────────────────────
     init();
 
-    // ─────────────────────────────────────────────────
-    // Enter VR button
-    // ─────────────────────────────────────────────────
     enterBtn.addEventListener('click', async () => {
       enterBtn.disabled = true;
       try {
-        await enterVR(selectedSceneId, (newId) => {
-          setActiveScene('panel-scene-grid', newId);
-        });
+        await enterVR(selectedSceneId, () => {});
       } catch (err) {
-        console.error('[App] enterVR error:', err);
-        alert(
-          'Could not start VR session.\n\n' +
-          (err.message ?? String(err)) + '\n\n' +
-          'Make sure you are using Safari on Apple Vision Pro (visionOS 2+) ' +
-          'or a WebXR-compatible browser.'
-        );
+        alert('Could not start VR session.\n\n' + (err.message ?? err));
       } finally {
-        // Re-enable after session ends or on error
-        enterBtn.disabled = !vrSupported;
+        enterBtn.disabled = !supported;
       }
-    });
-
-    // ─────────────────────────────────────────────────
-    // Exit VR button (inside the DOM overlay panel)
-    // ─────────────────────────────────────────────────
-    document.getElementById('exit-vr-btn').addEventListener('click', () => {
-      exitVR();
     });
   </script>
 

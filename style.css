@@ -247,60 +247,7 @@ section h2 {
   to { transform: rotate(360deg); }
 }
 
-/* ── DOM Overlay: Scene panel (shown inside XR) */
-#scene-panel {
-  /* This element becomes a floating 2D panel in visionOS */
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 300;
-  background: rgba(12, 12, 20, 0.92);
-  backdrop-filter: blur(20px) saturate(1.4);
-  border-top: 1px solid var(--border);
-  padding: 20px 24px 32px;
-  flex-direction: column;
-  gap: 16px;
-  max-height: 55vh;
-  overflow-y: auto;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.panel-header h2 {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text);
-  text-transform: none;
-  letter-spacing: 0;
-  margin-bottom: 0;
-}
-
-#exit-vr-btn {
-  background: rgba(255, 80, 80, 0.18);
-  border: 1px solid rgba(255, 80, 80, 0.35);
-  border-radius: 20px;
-  color: #f87171;
-  font-size: 0.85rem;
-  font-weight: 600;
-  padding: 8px 18px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-#exit-vr-btn:hover {
-  background: rgba(255, 80, 80, 0.3);
-}
-
-#panel-scene-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
-}
+/* (no extra panels needed — scene switching is via pinch in immersive session) */
 
 /* Responsive */
 @media (max-width: 480px) {
