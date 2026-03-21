@@ -157,11 +157,10 @@ export function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
-  // Non-XR render loop — keeps the background canvas alive
+  // Render loop — Three.js WebXR requires render() to be called every frame
+  // even inside an XR session; the XR system updates the camera pose automatically.
   renderer.setAnimationLoop(() => {
-    if (!renderer.xr.isPresenting) {
-      renderer.render(threeScene, camera);
-    }
+    renderer.render(threeScene, camera);
   });
 }
 
