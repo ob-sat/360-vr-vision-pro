@@ -173,32 +173,30 @@ export function init() {
  */
 export async function enterVR(initialSceneId, onSceneChange) {
   onSceneChangeCallback = onSceneChange ?? null;
-  setLoading(true);
 
   try {
-    // 1. Pre-load the initial panorama
-    const texture = await loadCubeTexture(initialSceneId);
-    threeScene.background = texture;
-
-    // 2. Build XR session options
-    //    DOM Overlay lets us render a 2D panel inside the visionOS immersive space.
+    // 1. Request XR session FIRST — must happen before any other await
+    //    so the browser's transient user activation (gesture window) is still valid.
     const scenePanel = document.getElementById('scene-panel');
     const sessionInit = {
       requiredFeatures: ['local'],
       optionalFeatures: ['dom-overlay'],
       domOverlay: scenePanel ? { root: scenePanel } : undefined,
     };
-
-    // 3. Request the session (must be called from a user gesture)
     xrSession = await navigator.xr.requestSession('immersive-vr', sessionInit);
     renderer.xr.setReferenceSpaceType('local');
     await renderer.xr.setSession(xrSession);
 
-    // 4. Show the in-VR scene panel
+    // 2. Session is live — now safe to load textures asynchronously
+    setLoading(true);
+    const texture = await loadCubeTexture(initialSceneId);
+    threeScene.background = texture;
+
+    // 3. Show the in-VR scene panel
     if (scenePanel) scenePanel.style.display = 'flex';
     setLoading(false);
 
-    // 5. Session-end cleanup
+    // 4. Session-end cleanup
     xrSession.addEventListener('end', () => {
       xrSession = null;
       if (scenePanel) scenePanel.style.display = 'none';
@@ -208,7 +206,6 @@ export async function enterVR(initialSceneId, onSceneChange) {
   } catch (err) {
     console.error('[VRViewer] enterVR failed:', err);
     setLoading(false);
-    // Re-throw so the UI layer can show a friendly message
     throw err;
   }
 }
