@@ -178,14 +178,20 @@ export async function enterVR(initialSceneId, onSceneChange) {
     const texture = await loadCubeTexture(initialSceneId);
     threeScene.background = texture;
 
-    // 3. Show the in-VR scene panel
-    if (scenePanel) scenePanel.style.display = 'flex';
     setLoading(false);
+
+    // 3. Pinch gesture (XR select event) cycles through scenes.
+    //    On Vision Pro: gaze anywhere, then pinch thumb + index finger.
+    let sceneIndex = SCENES.findIndex(s => s.id === initialSceneId);
+    xrSession.addEventListener('select', async () => {
+      sceneIndex = (sceneIndex + 1) % SCENES.length;
+      await switchScene(SCENES[sceneIndex].id);
+      onSceneChangeCallback?.(SCENES[sceneIndex].id);
+    });
 
     // 4. Session-end cleanup
     xrSession.addEventListener('end', () => {
       xrSession = null;
-      if (scenePanel) scenePanel.style.display = 'none';
       setLoading(false);
     });
 
