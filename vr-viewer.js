@@ -81,6 +81,22 @@ async function switchScene(sceneId) {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
+/**
+ * Snap-turn the XR view by angleDeg degrees around the Y axis.
+ * Positive = turn left (counterclockwise from above), negative = turn right.
+ * Works by offsetting the XR reference space; head tracking still applies on top.
+ */
+function snapTurn(angleDeg) {
+  const space = renderer.xr.getReferenceSpace();
+  if (!space) return;
+  const half = THREE.MathUtils.degToRad(angleDeg / 2);
+  const transform = new XRRigidTransform(
+    { x: 0, y: 0, z: 0, w: 1 },                          // no position offset
+    { x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) } // Y-axis quaternion
+  );
+  renderer.xr.setReferenceSpace(space.getOffsetReferenceSpace(transform));
+}
+
 export async function checkVRSupport() {
   if (!navigator.xr) return false;
   try { return await navigator.xr.isSessionSupported('immersive-vr'); }
@@ -125,12 +141,13 @@ export async function enterVR(initialSceneId, onSceneChange) {
     threeScene.background = tex;
     setLoading(false);
 
-    // Pinch (select event) → cycle to next scene
-    let sceneIndex = SCENES.findIndex(s => s.id === initialSceneId);
-    xrSession.addEventListener('select', async () => {
-      sceneIndex = (sceneIndex + 1) % SCENES.length;
-      await switchScene(SCENES[sceneIndex].id);
-      onSceneChange?.(SCENES[sceneIndex].id);
+    // Pinch gestures — left hand = turn left 45°, right hand = turn right 45°
+    // Rotates the XR reference space so the view snaps in that direction.
+    // Head tracking continues to work on top of the offset.
+    xrSession.addEventListener('select', (event) => {
+      const hand = event.inputSource.handedness; // 'left' | 'right' | 'none'
+      if (hand === 'left')  snapTurn(+45);
+      else if (hand === 'right') snapTurn(-45);
     });
 
     xrSession.addEventListener('end', () => {
